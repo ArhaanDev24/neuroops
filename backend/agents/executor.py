@@ -1,12 +1,14 @@
 from backend.llm import structured_output
 from backend.tools import TOOL_REGISTRY
+from backend.agents.code_architect import CodeArchitect # Import new agent
 from typing import List, Dict, Any
+import os
+
+# Initialize the Architect
+code_architect = CodeArchitect(max_retries=3)
 
 def select_tool(task: str) -> Dict[str, Any]:
-    """
-    Decides which tool to use for a specific task.
-    Returns: {"tool_name": "web_search", "arguments": {"query": "..."}}
-    """
+    # ... (Keep existing select_tool logic exactly as before) ...
     available_tools_desc = "\n".join([
         f"- {name}: {info['description']} (Args: {', '.join(info['args'])})" 
         for name, info in TOOL_REGISTRY.items()
@@ -14,7 +16,7 @@ def select_tool(task: str) -> Dict[str, Any]:
     
     schema = '''
     {
-        "tool_name": "string (one of: read_file, write_file, web_search, execute_python, or 'none' if using LLM reasoning)",
+        "tool_name": "string (one of: read_file, write_file, web_search, execute_python, complex_coding, or 'none')",
         "arguments": {} 
     }
     '''
@@ -25,34 +27,46 @@ def select_tool(task: str) -> Dict[str, Any]:
     Available Tools:
     {available_tools_desc}
     
-    If the task requires external data, calculation, or file I/O, select the appropriate tool and provide arguments.
-    If the task is purely conversational or creative writing, set tool_name to 'none'.
+    SPECIAL INSTRUCTION:
+    - If the task requires writing a script, building a feature, debugging, or complex logic spanning multiple lines, select 'complex_coding'.
+    - If it's a simple one-line calculation, use 'execute_python'.
+    - If it requires reading existing project files first, use 'read_file' then 'complex_coding'.
+    
+    Return strictly JSON.
     """
     
     decision = structured_output(prompt, schema)
     return decision
 
 def execute_task(task: str) -> Dict[str, Any]:
-    """
-    Executes a single task by selecting a tool and running it.
-    """
-    # 1. Select Tool
     decision = select_tool(task)
     tool_name = decision.get("tool_name", "none")
     args = decision.get("arguments", {})
     
     result = ""
     
-    if tool_name == "none":
-        # Fallback to direct LLM generation for non-tool tasks
+    if tool_name == "complex_coding":
+        #  NEW LOGIC: Use the Code Architect for iterative development
+        print("   ️ Engaging Code Architect for complex task...")
+        
+        # Gather context: List files in current directory to help the agent
+        try:
+            files = [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.py')]
+            context = f"Available files: {', '.join(files)}"
+        except:
+            context = "Could not list files."
+            
+        result = code_architect.solve_coding_task(task, context=context)
+        tool_name = "complex_coding (Iterative)"
+
+    elif tool_name == "none":
         from backend.llm import generate_response
         result = generate_response(f"Perform the following task directly: {task}")
+        
     elif tool_name in TOOL_REGISTRY:
-        # Execute Tool
         tool_info = TOOL_REGISTRY[tool_name]
         func = tool_info["func"]
         try:
-            # Map arguments carefully
             filtered_args = {k: v for k, v in args.items() if k in tool_info["args"]}
             result = func(**filtered_args)
         except Exception as e:
@@ -67,7 +81,6 @@ def execute_task(task: str) -> Dict[str, Any]:
     }
 
 def execute_tasks(tasks: List[str]) -> List[Dict[str, Any]]:
-    """Executes a list of tasks sequentially."""
     results = []
     for task in tasks:
         print(f"Executing: {task}...")
