@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+ollama
+chromadb
+requests
+beautifulsoup4
+tenacity
+jinja2
+rich
