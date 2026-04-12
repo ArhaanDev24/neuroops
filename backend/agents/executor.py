@@ -8,31 +8,32 @@ import os
 code_architect = CodeArchitect(max_retries=3)
 
 def select_tool(task: str) -> Dict[str, Any]:
-    # ... (Keep existing select_tool logic exactly as before) ...
-    available_tools_desc = "\n".join([
-        f"- {name}: {info['description']} (Args: {', '.join(info['args'])})" 
+    # Compact tool descriptions
+    tools_summary = "; ".join([
+        f"{name}({','.join(info['args'])})" 
         for name, info in TOOL_REGISTRY.items()
     ])
     
-    schema = '''
-    {
-        "tool_name": "string (one of: read_file, write_file, web_search, execute_python, complex_coding, or 'none')",
-        "arguments": {} 
-    }
-    '''
+    schema = '{"tool_name": "string", "arguments": {}}'
     
+    # ✅ ENHANCED PROMPT FOR OBSIDIAN & COMPLEX ARGS
     prompt = f"""
     Task: "{task}"
+    Tools: {tools_summary}
     
-    Available Tools:
-    {available_tools_desc}
+    CRITICAL RULES FOR JSON OUTPUT:
+    1. If using 'create_vault_note', you MUST put the FULL note content inside the "content" argument.
+    2. Do NOT say "I will write it later". Write it NOW in the JSON.
+    3. Escape all newlines as \\n and quotes as \\" inside the JSON string.
+    4. If content is too long, summarize it first, then use 'append_to_note' in a subsequent step.
+    5. For 'complex_coding', ensure the code string is also properly escaped.
     
     SPECIAL INSTRUCTION:
-    - If the task requires writing a script, building a feature, debugging, or complex logic spanning multiple lines, select 'complex_coding'.
-    - If it's a simple one-line calculation, use 'execute_python'.
-    - If it requires reading existing project files first, use 'read_file' then 'complex_coding'.
+    - Complex logic/scripting -> 'complex_coding'
+    - Simple math -> 'execute_python'
+    - Reading files first -> 'read_file' then 'complex_coding'
     
-    Return strictly JSON.
+    Return STRICTLY valid JSON only. No markdown fences.
     """
     
     decision = structured_output(prompt, schema)
